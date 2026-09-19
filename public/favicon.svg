@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Connector Lines (Black spokes) -->
+  <line x1="240" y1="240" x2="80" y2="80" stroke="#000000" stroke-width="26" stroke-linecap="round" />
+  <line x1="240" y1="240" x2="375" y2="95" stroke="#000000" stroke-width="26" stroke-linecap="round" />
+  <line x1="240" y1="240" x2="110" y2="365" stroke="#000000" stroke-width="26" stroke-linecap="round" />
+  <line x1="240" y1="240" x2="240" y2="435" stroke="#000000" stroke-width="26" stroke-linecap="round" />
+  <line x1="240" y1="240" x2="435" y2="415" stroke="#000000" stroke-width="26" stroke-linecap="round" />
+
+  <!-- Center Node -->
+  <circle cx="240" cy="240" r="62" fill="#FFFFFF" stroke="#000000" stroke-width="26" />
+
+  <!-- Top-Left Gold/Yellow Node -->
+  <circle cx="80" cy="80" r="44" fill="#FACC15" stroke="#000000" stroke-width="26" />
+
+  <!-- Top-Right Node -->
+  <circle cx="375" cy="95" r="28" fill="#FFFFFF" stroke="#000000" stroke-width="22" />
+
+  <!-- Bottom-Left Node -->
+  <circle cx="110" cy="365" r="30" fill="#FFFFFF" stroke="#000000" stroke-width="22" />
+
+  <!-- Bottom-Center Node -->
+  <circle cx="240" cy="435" r="46" fill="#FFFFFF" stroke="#000000" stroke-width="26" />
+
+  <!-- Bottom-Right Node -->
+  <circle cx="435" cy="415" r="46" fill="#FFFFFF" stroke="#000000" stroke-width="26" />
+</svg>

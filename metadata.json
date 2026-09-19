@@ -1,0 +1,8 @@
+{
+  "name": "Calculadora de Canibalização Semântica",
+  "description": "Analisador avançado de canibalização semântica de SEO e sobreposição de intenção de busca com embeddings vetoriais Gemini e diagnóstico estratégico.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

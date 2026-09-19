@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSuperAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == 'alexrodrigues43@gmail.com' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      // Super admin or admin can read, write, update, delete everything
+      allow read, write: if isSuperAdmin();
+
+      // User can read their own profile
+      allow read: if isOwner(userId);
+
+      // User can create their own profile during signup
+      allow create: if isOwner(userId);
+
+      // User can update basic allowed fields (like lastLoginAt, usageCount)
+      allow update: if isOwner(userId);
+    }
+
+    // Default fallback
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+      allow read: if request.auth != null;
+    }
+  }
+}
