@@ -12,6 +12,9 @@ import {
   ListOrdered,
   Sparkles,
   BookOpen,
+  FileText,
+  Sliders,
+  Printer,
 } from 'lucide-react';
 
 interface ActionPlanProps {
@@ -20,6 +23,9 @@ interface ActionPlanProps {
   overallScore: number;
   onCopyFullReport: () => void;
   isCopied: boolean;
+  onOpenBriefing?: () => void;
+  onOpenSimulator?: () => void;
+  onOpenPdfReport?: () => void;
 }
 
 export const ActionPlan: React.FC<ActionPlanProps> = ({
@@ -28,6 +34,9 @@ export const ActionPlan: React.FC<ActionPlanProps> = ({
   overallScore,
   onCopyFullReport,
   isCopied,
+  onOpenBriefing,
+  onOpenSimulator,
+  onOpenPdfReport,
 }) => {
   const [activeTab, setActiveTab] = useState<'roadmap' | 'internalLinks' | 'blueprint'>('roadmap');
 
@@ -67,23 +76,60 @@ export const ActionPlan: React.FC<ActionPlanProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onCopyFullReport}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors self-start sm:self-auto"
-          >
-            {isCopied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-300">Relatório Copiado!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copiar Parecer SEO</span>
-              </>
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+            {onOpenSimulator && (
+              <button
+                type="button"
+                onClick={onOpenSimulator}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg shadow-2xs transition-colors"
+                title="Auditar risco de tráfego antes de redirecionar"
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Simulador 301</span>
+              </button>
             )}
-          </button>
+
+            {onOpenBriefing && (
+              <button
+                type="button"
+                onClick={onOpenBriefing}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg shadow-2xs transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Briefing Redator</span>
+              </button>
+            )}
+
+            {onOpenPdfReport && (
+              <button
+                type="button"
+                onClick={onOpenPdfReport}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors"
+                title="Imprimir ou Salvar Relatório Executivo em PDF"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Relatório PDF</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={onCopyFullReport}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 rounded-lg transition-colors"
+            >
+              {isCopied ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-300">Copiado!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copiar Parecer</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">

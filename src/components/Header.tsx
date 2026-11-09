@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { SemanticoLogo } from './SemanticoLogo';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -14,29 +14,49 @@ import {
   Lock,
   Clock,
   ExternalLink,
+  FileSpreadsheet,
+  LogIn,
+  Zap,
+  ShieldCheck,
 } from 'lucide-react';
 
 interface HeaderProps {
-  onOpenGuide: () => void;
+  onOpenGuide: (tab?: 'problem' | 'benefits' | 'howItWorks') => void;
   onOpenAdmin: () => void;
   onNewAnalysis: () => void;
+  onOpenGsc?: () => void;
   historyCount?: number;
+  onOpenAuth?: (mode?: 'login' | 'register') => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenGuide,
   onOpenAdmin,
   onNewAnalysis,
+  onOpenGsc,
   historyCount = 0,
+  onOpenAuth,
 }) => {
   const { user, userProfile, isAdmin, isActive, openPaywall, logout } = useAuth();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close user menu on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const getStatusBadge = () => {
     if (isAdmin) {
       return (
         <span className="bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[10px] px-2 py-0.5 rounded-full">
-          Admin
+          Super Admin
         </span>
       );
     }
@@ -58,7 +78,6 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const displayName = userProfile?.displayName || user?.displayName || user?.email?.split('@')[0] || 'Usuário';
-  const initial = displayName.charAt(0).toUpperCase();
 
   return (
     <header className="border-b border-slate-200 bg-white sticky top-0 z-40 shadow-2xs">
@@ -71,104 +90,126 @@ export const Header: React.FC<HeaderProps> = ({
               <SemanticoLogo size="md" />
             </a>
 
-            {/* Desktop Nav Links */}
-            <nav className="hidden lg:flex items-center gap-6 text-xs font-semibold text-slate-700">
+            {/* Desktop Nav Links (Matching official suite navigation) */}
+            <nav className="hidden lg:flex items-center gap-7 text-xs font-semibold text-slate-700" aria-label="Navegação Principal">
               <a
-                href="https://semantico.com.br/#servicos"
+                href="https://semantico.com.br/contato.html"
                 target="_blank"
-                rel="noreferrer"
-                className="hover:text-slate-950 transition"
-              >
-                Serviços
-              </a>
-              <a
-                href="#ferramentas"
-                className="text-slate-950 flex items-center gap-1.5 transition"
-              >
-                <span>Ferramentas</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-              </a>
-              <a
-                href="https://semantico.com.br/blog"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-slate-950 transition"
-              >
-                Blog
-              </a>
-              <a
-                href="https://semantico.com.br/podcast"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-slate-950 transition"
-              >
-                Podcasts
-              </a>
-              <a
-                href="https://semantico.com.br/contato"
-                target="_blank"
-                rel="noreferrer"
-                className="hover:text-slate-950 transition"
+                rel="noopener noreferrer"
+                className="hover:text-slate-950 transition-colors cursor-pointer py-2 min-h-[44px] flex items-center"
               >
                 Contato
               </a>
             </nav>
           </div>
 
-          {/* Right: Language / Admin Button / User Profile */}
-          <div className="flex items-center gap-3">
-            {/* Country / Language Selector */}
-            <div className="hidden sm:flex items-center gap-1 text-xs text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg">
-              <span className="text-sm">🇧🇷</span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
-            </div>
+          {/* Right Controls: Credit Wallet Badge + Penultimate: Criar Conta + Last: Entrar / User */}
+          <div className="flex items-center gap-2.5 shrink-0">
 
-            {/* Admin Panel Button (Strictly visible for role: 'admin') */}
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={onOpenAdmin}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-400 hover:bg-amber-500 text-slate-950 font-bold text-xs rounded-full shadow-2xs transition active:scale-[0.98]"
-                title="Acessar Gestão de Assinantes e Permissões"
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>Painel Admin</span>
-              </button>
-            )}
+            {/* Central Credit Wallet Badge / Comprar Créditos */}
+            <a
+              href="https://cobrador.semantico.com.br"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`min-h-[44px] flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all border shadow-2xs cursor-pointer whitespace-nowrap shrink-0 ${
+                !user || isAdmin
+                  ? 'bg-amber-500/10 text-amber-950 border-amber-300 hover:bg-amber-500/20'
+                  : (userProfile?.creditsBalance ?? 0) > 0
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                    : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100 animate-pulse'
+              }`}
+              title={isAdmin ? 'Super Admin: Créditos Ilimitados' : 'Clique para gerenciar créditos e recargas no Cobrador Semântico'}
+            >
+              <span className="text-sm" aria-hidden="true">🪙</span>
+              <span>
+                {!user
+                  ? 'Comprar Créditos'
+                  : isAdmin
+                    ? 'Créditos Ilimitados'
+                    : `${userProfile?.creditsBalance ?? 0} créditos`}
+              </span>
+            </a>
 
-            {/* User Profile or Login Trigger */}
+            {/* PENULTIMATE ITEM: Criar Conta / Assinatura / Super Admin (Golden Button) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isAdmin) {
+                  onOpenAdmin();
+                } else if (!user) {
+                  onOpenAuth ? onOpenAuth('register') : openPaywall();
+                } else {
+                  openPaywall('Gerencie sua assinatura ou adquira recargas de créditos para a Suíte Semântico.');
+                }
+              }}
+              className="px-4 py-1.5 rounded-full bg-[#f5be38] hover:bg-[#eab308] text-slate-950 text-xs font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-98 flex items-center gap-1.5"
+              title={isAdmin ? 'Acessar Painel Super Admin' : user ? 'Gerenciar Assinatura e Créditos' : 'Criar Nova Conta'}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+              <span>{isAdmin ? 'Super Admin' : user ? 'Assinatura' : 'Criar Conta'}</span>
+            </button>
+
+            {/* LAST ITEM: User Session Dropdown (Logged in) OR Entrar Button (Logged out) */}
             {user ? (
-              <div className="relative">
+              <div className="relative" ref={userMenuRef}>
                 <button
                   type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-2 p-1 pl-1.5 pr-2.5 rounded-full hover:bg-slate-100 border border-slate-200 transition text-xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 hover:bg-slate-200/80 text-slate-800 border border-slate-200 transition-colors cursor-pointer"
                 >
-                  <div className="w-7 h-7 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-xs">
-                    {initial}
-                  </div>
-                  <span className="font-semibold text-slate-800 max-w-[100px] truncate hidden sm:inline">
-                    {displayName}
+                  {user.photoURL ? (
+                    <img 
+                      src={user.photoURL} 
+                      alt="" 
+                      className="w-4 h-4 rounded-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-[#1a5d38]" />
+                  )}
+                  <span className="max-w-[85px] truncate text-[11px] font-bold">
+                    {isAdmin ? 'Admin' : (displayName.split(' ')[0])}
                   </span>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                  <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
 
-                {/* Dropdown Menu */}
+                {/* User Dropdown Menu */}
                 {isUserMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in slide-in-from-top-2">
-                    <div className="px-4 py-3 border-b border-slate-100">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-bold text-xs text-slate-900 truncate">
-                          {displayName}
-                        </span>
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="px-3.5 py-2 border-b border-slate-100">
+                      <div className="flex items-center justify-between">
                         {getStatusBadge()}
+                        <span className="text-[10px] font-bold text-slate-500 uppercase">
+                          {userProfile?.plan || 'trial'}
+                        </span>
                       </div>
-                      <div className="text-[11px] text-slate-500 truncate">{user.email}</div>
-                      <div className="mt-2 flex items-center justify-between text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200/60">
-                        <span>Plano: <strong className="capitalize">{userProfile?.plan || 'Trial'}</strong></span>
-                        <span>Usos: <strong>{userProfile?.usageCount || 0}</strong></span>
+                      <p className="text-xs font-bold text-slate-800 truncate mt-1">
+                        {displayName}
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {user.email}
+                      </p>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 text-[11px]">
+                        <span className="text-slate-500 font-semibold">Saldo de Créditos:</span>
+                        <span className="font-bold text-amber-800">
+                          {isAdmin ? 'Ilimitado' : `${userProfile?.creditsBalance ?? 0} créditos`}
+                        </span>
                       </div>
                     </div>
+
+                    {!isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsUserMenuOpen(false);
+                          openPaywall('Recarregue ou assine para continuar utilizando a ferramenta.');
+                        }}
+                        className="w-full px-3.5 py-2 text-left hover:bg-amber-50 flex items-center gap-2 text-xs font-semibold text-amber-900 cursor-pointer"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Recarregar / Assinar</span>
+                      </button>
+                    )}
 
                     {isAdmin && (
                       <button
@@ -177,9 +218,9 @@ export const Header: React.FC<HeaderProps> = ({
                           setIsUserMenuOpen(false);
                           onOpenAdmin();
                         }}
-                        className="w-full px-4 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50 flex items-center gap-2 transition"
+                        className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer"
                       >
-                        <Shield className="w-4 h-4 text-amber-600" />
+                        <ShieldCheck className="w-3.5 h-3.5 text-[#f5be38]" />
                         <span>Painel Administrativo</span>
                       </button>
                     )}
@@ -190,13 +231,11 @@ export const Header: React.FC<HeaderProps> = ({
                         setIsUserMenuOpen(false);
                         onOpenGuide();
                       }}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition"
+                      className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 transition cursor-pointer"
                     >
                       <HelpCircle className="w-4 h-4 text-slate-500" />
                       <span>Como Funciona o Diagnóstico</span>
                     </button>
-
-                    <div className="border-t border-slate-100 my-1"></div>
 
                     <button
                       type="button"
@@ -204,10 +243,10 @@ export const Header: React.FC<HeaderProps> = ({
                         setIsUserMenuOpen(false);
                         logout();
                       }}
-                      className="w-full px-4 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition font-medium"
+                      className="w-full px-3.5 py-2 text-left hover:bg-rose-50 text-rose-600 flex items-center gap-2 text-xs font-semibold border-t border-slate-100 mt-1 cursor-pointer"
                     >
-                      <LogOut className="w-4 h-4" />
-                      <span>Sair da Conta</span>
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Encerrar Sessão</span>
                     </button>
                   </div>
                 )}
@@ -215,24 +254,25 @@ export const Header: React.FC<HeaderProps> = ({
             ) : (
               <button
                 type="button"
-                onClick={() => openPaywall()}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-xl shadow-2xs transition"
+                onClick={() => onOpenAuth ? onOpenAuth('login') : openPaywall()}
+                className="px-3 py-1 text-xs font-semibold text-slate-700 hover:text-slate-950 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
               >
-                <User className="w-3.5 h-3.5" />
-                <span>Entrar / Cadastrar</span>
+                <LogIn className="w-3.5 h-3.5 text-slate-500" />
+                <span>Entrar</span>
               </button>
             )}
+
           </div>
         </div>
       </div>
 
-      {/* Sub-navigation Bar (Matching image.png: O Problema, Calculadora Semântica, Benefícios, Como Funciona | Histórico, + Nova Análise) */}
+      {/* Sub-navigation Bar (Matching design system: O Problema, Calculadora Semântica, Benefícios, Como Funciona | Histórico, + Nova Análise) */}
       <div className="bg-slate-50/70 border-t border-slate-200/80">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
           {/* Sub Navigation Items */}
           <div className="flex items-center flex-wrap gap-2 sm:gap-3 text-slate-600">
             <button
-              onClick={onOpenGuide}
+              onClick={() => onOpenGuide('problem')}
               className="hover:text-slate-950 transition font-medium px-2 py-1 rounded"
             >
               O Problema
@@ -246,14 +286,14 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <button
-              onClick={onOpenGuide}
+              onClick={() => onOpenGuide('benefits')}
               className="hover:text-slate-950 transition font-medium px-2 py-1 rounded"
             >
               Benefícios
             </button>
 
             <button
-              onClick={onOpenGuide}
+              onClick={() => onOpenGuide('howItWorks')}
               className="hover:text-slate-950 transition font-medium px-2 py-1 rounded"
             >
               Como Funciona
@@ -275,6 +315,18 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden md:inline-block text-[11px] font-medium text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
               Ferramenta por Semântico SEO
             </span>
+
+            {onOpenGsc && (
+              <button
+                type="button"
+                onClick={onOpenGsc}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition shadow-xs active:scale-[0.98]"
+                title="Importar CSV do Google Search Console"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Importar GSC</span>
+              </button>
+            )}
 
             <button
               type="button"

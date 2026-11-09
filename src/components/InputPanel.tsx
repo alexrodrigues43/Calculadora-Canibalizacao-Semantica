@@ -113,7 +113,7 @@ export const InputPanel: React.FC<InputPanelProps> = ({
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pb-4 mb-5 border-b border-slate-100">
         <div className="flex-1 w-full md:max-w-md">
           <label className="block text-xs font-semibold text-slate-700 mb-1">
-            Palavra-Chave / Termo Alvo da Disputa (Opcional)
+            Termo Alvo da Disputa (Opcional)
           </label>
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />

@@ -2,6 +2,9 @@ import express from 'express';
 import type { Request, Response } from 'express';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
+import net from 'net';
+import crypto from 'crypto';
 import { GoogleGenAI, Type } from '@google/genai';
 import * as cheerio from 'cheerio';
 import dotenv from 'dotenv';
@@ -112,84 +115,291 @@ function fallbackTfidfSimilarity(text1: string, text2: string): number {
   return calculateCosineSimilarity(vecA, vecB);
 }
 
-// URL fetching & content extraction helper
-async function scrapeUrl(url: string) {
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 (SEO-Semantic-Cannibalization-Bot)',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-      },
-      signal: AbortSignal.timeout(12000),
-    });
+// SSRF Defense: Check if an IP address is within private, loopback, or cloud metadata ranges
+function isPrivateIp(ip: string): boolean {
+  if (!ip) return true;
+  // Normalize IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1)
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
 
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+  if (net.isIPv4(ip)) {
+    const parts = ip.split('.').map((p) => parseInt(p, 10));
+    if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) {
+      return true;
+    }
+    const [a, b] = parts;
+    // 0.0.0.0/8 (Broadcast/Current network)
+    if (a === 0) return true;
+    // 127.0.0.0/8 (Loopback)
+    if (a === 127) return true;
+    // 10.0.0.0/8 (Private RFC 1918)
+    if (a === 10) return true;
+    // 172.16.0.0/12 (Private RFC 1918)
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    // 192.168.0.0/16 (Private RFC 1918)
+    if (a === 192 && b === 168) return true;
+    // 169.254.0.0/16 (Link-local & Cloud Metadata endpoint 169.254.169.254)
+    if (a === 169 && b === 254) return true;
+    // 100.64.0.0/10 (Carrier-grade NAT)
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    // 192.0.0.0/24 (IETF Protocol Assignments)
+    if (a === 192 && b === 0) return true;
+    // 198.18.0.0/15 (Benchmark testing)
+    if (a === 198 && (b === 18 || b === 19)) return true;
+    // 198.51.100.0/24 & 203.0.113.0/24 (Documentation)
+    if ((a === 198 && b === 51) || (a === 203 && b === 0)) return true;
+    // 224.0.0.0/4 (Multicast) & 240.0.0.0/4 (Reserved)
+    if (a >= 224) return true;
+    return false;
+  }
+
+  if (net.isIPv6(ip)) {
+    const normalized = ip.toLowerCase();
+    // Loopback
+    if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
+    // Unspecified
+    if (normalized === '::' || normalized === '0:0:0:0:0:0:0:0') return true;
+    // Link-local: fe80::/10
+    if (normalized.startsWith('fe8') || normalized.startsWith('fe9') || normalized.startsWith('fea') || normalized.startsWith('feb')) return true;
+    // Unique Local: fc00::/7 (fc00... ou fd00...)
+    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+    // IPv4-mapped IPv6
+    if (normalized.startsWith('::ffff:')) {
+      return isPrivateIp(normalized.substring(7));
+    }
+    return false;
+  }
+
+  return true;
+}
+
+// Validates a URL against Server-Side Request Forgery (SSRF) threats
+async function validateUrlForSsrf(rawUrl: string): Promise<{ valid: boolean; error?: string; url?: URL }> {
+  try {
+    const parsed = new URL(rawUrl);
+
+    // 1. Only allow HTTP and HTTPS
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return { valid: false, error: 'Protocolo não permitido. Apenas HTTP e HTTPS são suportados.' };
     }
 
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    // 2. Reject credentials in URL
+    if (parsed.username || parsed.password) {
+      return { valid: false, error: 'Credenciais na URL não são permitidas.' };
+    }
 
-    // Remove noisy elements
-    $('script, style, nav, footer, header, noscript, svg, iframe, form, aside, .cookie-banner, .advertisement, [aria-hidden="true"]').remove();
+    // 3. Port restrictions (standard HTTP/HTTPS only)
+    const port = parsed.port ? parseInt(parsed.port, 10) : parsed.protocol === 'https:' ? 443 : 80;
+    if (port !== 80 && port !== 443) {
+      return { valid: false, error: 'Porta não permitida. Apenas portas padrão 80 e 443 são aceitas.' };
+    }
 
-    const title = $('title').text().trim() || $('meta[property="og:title"]').attr('content') || '';
-    const metaDescription =
-      $('meta[name="description"]').attr('content')?.trim() ||
-      $('meta[property="og:description"]').attr('content')?.trim() ||
-      '';
+    const hostname = parsed.hostname.toLowerCase();
 
-    const h1: string[] = [];
-    $('h1').each((_, el) => {
-      const text = $(el).text().trim();
-      if (text) h1.push(text);
-    });
+    // 4. Reject local and internal hostnames
+    if (
+      hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname.endsWith('.local') ||
+      hostname.endsWith('.internal') ||
+      hostname.includes('metadata.google') ||
+      !hostname.includes('.')
+    ) {
+      return { valid: false, error: 'Acesso a domínios internos, locais ou de metadados é bloqueado por segurança.' };
+    }
 
-    const h2: string[] = [];
-    $('h2').each((_, el) => {
-      const text = $(el).text().trim();
-      if (text && h2.length < 10) h2.push(text);
-    });
-
-    // Extract body text from paragraphs and headings
-    const contentBlocks: string[] = [];
-    $('p, h1, h2, h3, article, section').each((_, el) => {
-      const text = $(el).text().trim();
-      if (text.length > 20) {
-        contentBlocks.push(text);
+    // 5. If hostname is raw IP, validate directly
+    if (net.isIP(hostname)) {
+      if (isPrivateIp(hostname)) {
+        return { valid: false, error: 'Acesso a endereços IP privados ou reservados é bloqueado por segurança.' };
       }
-    });
+    }
 
-    const fullText = contentBlocks.join(' \n\n ').replace(/\s+/g, ' ').trim();
-    const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+    // 6. DNS lookup validation (prevent DNS rebinding / internal routing)
+    const resolved = await dns.promises.lookup(hostname, { all: true });
+    if (!resolved || resolved.length === 0) {
+      return { valid: false, error: 'Não foi possível resolver o endereço DNS do domínio informado.' };
+    }
 
-    return {
-      success: true,
-      url,
-      title,
-      metaDescription,
-      h1,
-      h2,
-      wordCount,
-      text: fullText.slice(0, 12000), // Cap for token optimization
-      textSnippet: fullText.slice(0, 1000),
-    };
+    for (const record of resolved) {
+      if (isPrivateIp(record.address)) {
+        return {
+          valid: false,
+          error: 'O domínio resolve para endereço de rede privada ou reservada não autorizada.',
+        };
+      }
+    }
+
+    return { valid: true, url: parsed };
   } catch (err: any) {
-    return {
-      success: false,
-      url,
-      error: err.message || 'Falha ao acessar a URL',
-      title: '',
-      metaDescription: '',
-      h1: [],
-      h2: [],
-      wordCount: 0,
-      text: '',
-      textSnippet: '',
-    };
+    return { valid: false, error: `URL inválida: ${err.message}` };
   }
+}
+
+// Extract headings from unstructured or markdown text
+function extractHeadingsFromText(text: string): { h1: string[]; h2: string[] } {
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const h1: string[] = [];
+  const h2: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('# ')) {
+      const heading = line.replace(/^#\s+/, '').trim();
+      if (heading && !h1.includes(heading)) h1.push(heading);
+    } else if (line.startsWith('## ')) {
+      const heading = line.replace(/^##\s+/, '').trim();
+      if (heading && !h2.includes(heading)) h2.push(heading);
+    } else if (line.toLowerCase().startsWith('título:') || line.toLowerCase().startsWith('titulo:')) {
+      const heading = line.replace(/^t[ií]tulo:\s*/i, '').trim();
+      if (heading && !h1.includes(heading)) h1.push(heading);
+    } else if (line.match(/^(\d+[\.\)]|[A-Z][\.\)])\s+[A-ZÀ-Ú]/) && line.length < 80) {
+      if (!h2.includes(line)) h2.push(line);
+    }
+  }
+
+  // If no explicit markdown/section headings were found, extract heading-like candidate lines
+  if (h2.length === 0) {
+    for (const line of lines) {
+      if (line.length > 5 && line.length < 80 && !line.endsWith('.') && !line.endsWith(',') && !line.endsWith(';')) {
+        if (!h1.includes(line) && !h2.includes(line) && h2.length < 10) {
+          h2.push(line);
+        }
+      }
+    }
+  }
+
+  return { h1: h1.slice(0, 3), h2: h2.slice(0, 15) };
+}
+
+// URL fetching & content extraction helper with SSRF defense and secure redirect tracking
+async function scrapeUrl(initialUrl: string, maxRedirects = 4) {
+  let currentUrl = initialUrl;
+  let redirectsRemaining = maxRedirects;
+
+  while (redirectsRemaining >= 0) {
+    const ssrfCheck = await validateUrlForSsrf(currentUrl);
+    if (!ssrfCheck.valid) {
+      return {
+        success: false,
+        url: currentUrl,
+        error: ssrfCheck.error || 'URL bloqueada por políticas de segurança.',
+        title: '',
+        metaDescription: '',
+        h1: [],
+        h2: [],
+        wordCount: 0,
+        text: '',
+        textSnippet: '',
+      };
+    }
+
+    try {
+      const response = await fetch(currentUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 (SEO-Semantic-Cannibalization-Bot)',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(12000),
+      });
+
+      // Handle HTTP redirects securely by validating target URL with anti-SSRF checks
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        if (!location) {
+          throw new Error(`Redirecionamento ${response.status} sem cabeçalho Location.`);
+        }
+        redirectsRemaining--;
+        if (redirectsRemaining < 0) {
+          throw new Error('Excesso de redirecionamentos na URL informada.');
+        }
+        const resolvedUrl = new URL(location, currentUrl).href;
+        currentUrl = resolvedUrl;
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+      }
+
+      const html = await response.text();
+      const $ = cheerio.load(html);
+
+      // Remove noisy elements
+      $('script, style, nav, footer, header, noscript, svg, iframe, form, aside, .cookie-banner, .advertisement, [aria-hidden="true"]').remove();
+
+      const title = $('title').text().trim() || $('meta[property="og:title"]').attr('content') || '';
+      const metaDescription =
+        $('meta[name="description"]').attr('content')?.trim() ||
+        $('meta[property="og:description"]').attr('content')?.trim() ||
+        '';
+
+      const h1: string[] = [];
+      $('h1').each((_, el) => {
+        const text = $(el).text().trim();
+        if (text && !h1.includes(text)) h1.push(text);
+      });
+
+      const h2: string[] = [];
+      $('h2').each((_, el) => {
+        const text = $(el).text().trim();
+        if (text && !h2.includes(text) && h2.length < 15) h2.push(text);
+      });
+
+      // Extract body text from paragraphs and headings
+      const contentBlocks: string[] = [];
+      $('p, h1, h2, h3, article, section').each((_, el) => {
+        const text = $(el).text().trim();
+        if (text.length > 20) {
+          contentBlocks.push(text);
+        }
+      });
+
+      const fullText = contentBlocks.join(' \n\n ').replace(/\s+/g, ' ').trim();
+      const wordCount = fullText.split(/\s+/).filter(Boolean).length;
+
+      return {
+        success: true,
+        url: currentUrl,
+        title,
+        metaDescription,
+        h1,
+        h2,
+        wordCount,
+        text: fullText.slice(0, 12000), // Cap for token optimization
+        textSnippet: fullText.slice(0, 1000),
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        url: currentUrl,
+        error: err.message || 'Falha ao acessar a URL',
+        title: '',
+        metaDescription: '',
+        h1: [],
+        h2: [],
+        wordCount: 0,
+        text: '',
+        textSnippet: '',
+      };
+    }
+  }
+
+  return {
+    success: false,
+    url: currentUrl,
+    error: 'Número excessivo de redirecionamentos na URL.',
+    title: '',
+    metaDescription: '',
+    h1: [],
+    h2: [],
+    wordCount: 0,
+    text: '',
+    textSnippet: '',
+  };
 }
 
 // Healthcheck Routes (compatible with GCP / Cloud Run container probes)
@@ -219,6 +429,22 @@ app.post('/api/fetch-url', async (req: Request, res: Response) => {
   }
 });
 
+// In-Memory SHA-256 Cache for Analysis Results (24h TTL)
+interface AnalysisCacheEntry {
+  payload: any;
+  timestamp: number;
+}
+const analysisCache = new Map<string, AnalysisCacheEntry>();
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_CACHE_SIZE = 500;
+
+function getAnalysisCacheKey(contentA: string, contentB: string, targetKeyword?: string): string {
+  const normA = (contentA || '').trim();
+  const normB = (contentB || '').trim();
+  const normKw = (targetKeyword || '').trim().toLowerCase();
+  return crypto.createHash('sha256').update(`${normA}:::${normB}:::${normKw}`).digest('hex');
+}
+
 app.post('/api/analyze-cannibalization', async (req: Request, res: Response) => {
   try {
     let { contentA, contentB, targetKeyword } = req.body;
@@ -227,10 +453,18 @@ app.post('/api/analyze-cannibalization', async (req: Request, res: Response) => 
       return res.status(400).json({ error: 'Forneça ambos os conteúdos ou URLs para comparação.' });
     }
 
-    let metaA: { title?: string; wordCount?: number; url?: string } = {};
-    let metaB: { title?: string; wordCount?: number; url?: string } = {};
+    // Check SHA-256 Analysis Cache
+    const cacheKey = getAnalysisCacheKey(contentA, contentB, targetKeyword);
+    const cached = analysisCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+      res.setHeader('X-Cache', 'HIT');
+      return res.json(cached.payload);
+    }
 
-    // 1. Process URLs if provided
+    let metaA: { title?: string; wordCount?: number; url?: string; h1?: string[]; h2?: string[] } = {};
+    let metaB: { title?: string; wordCount?: number; url?: string; h1?: string[]; h2?: string[] } = {};
+
+    // 1. Process URLs if provided, or extract headings from raw text
     if (typeof contentA === 'string' && contentA.trim().startsWith('http')) {
       const scraped = await scrapeUrl(contentA.trim());
       if (!scraped.success || scraped.text.length < 50) {
@@ -238,9 +472,23 @@ app.post('/api/analyze-cannibalization', async (req: Request, res: Response) => 
           error: `Conteúdo A (URL): Não foi possível extrair texto suficiente da URL (${scraped.error || 'menos de 50 caracteres'}).`,
         });
       }
-      metaA = { title: scraped.title, wordCount: scraped.wordCount, url: contentA.trim() };
+      metaA = {
+        title: scraped.title,
+        wordCount: scraped.wordCount,
+        url: contentA.trim(),
+        h1: scraped.h1,
+        h2: scraped.h2,
+      };
       const headingsA = [...scraped.h1, ...scraped.h2].join(', ');
       contentA = `Título: ${scraped.title}\nDescrição: ${scraped.metaDescription}\nHeadings: ${headingsA}\n\nConteúdo:\n${scraped.text}`;
+    } else {
+      const extractedA = extractHeadingsFromText(contentA);
+      metaA = {
+        title: extractedA.h1[0] || 'Conteúdo A',
+        wordCount: contentA.split(/\s+/).filter(Boolean).length,
+        h1: extractedA.h1,
+        h2: extractedA.h2,
+      };
     }
 
     if (typeof contentB === 'string' && contentB.trim().startsWith('http')) {
@@ -250,9 +498,23 @@ app.post('/api/analyze-cannibalization', async (req: Request, res: Response) => 
           error: `Conteúdo B (URL): Não foi possível extrair texto suficiente da URL (${scraped.error || 'menos de 50 caracteres'}).`,
         });
       }
-      metaB = { title: scraped.title, wordCount: scraped.wordCount, url: contentB.trim() };
+      metaB = {
+        title: scraped.title,
+        wordCount: scraped.wordCount,
+        url: contentB.trim(),
+        h1: scraped.h1,
+        h2: scraped.h2,
+      };
       const headingsB = [...scraped.h1, ...scraped.h2].join(', ');
       contentB = `Título: ${scraped.title}\nDescrição: ${scraped.metaDescription}\nHeadings: ${headingsB}\n\nConteúdo:\n${scraped.text}`;
+    } else {
+      const extractedB = extractHeadingsFromText(contentB);
+      metaB = {
+        title: extractedB.h1[0] || 'Conteúdo B',
+        wordCount: contentB.split(/\s+/).filter(Boolean).length,
+        h1: extractedB.h1,
+        h2: extractedB.h2,
+      };
     }
 
     if (contentA.trim().length < 40 || contentB.trim().length < 40) {
@@ -490,6 +752,28 @@ Responda ESTRITAMENTE em formato JSON com a estrutura solicitada, usando as regr
                   },
                   required: ['angleA', 'angleB', 'h2SuggestionsA', 'h2SuggestionsB'],
                 },
+                headingsAnalysis: {
+                  type: Type.OBJECT,
+                  description: 'Comparação estrutural de tópicos e headings H2 entre Conteúdo A e B',
+                  properties: {
+                    comparisonList: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          topicH2: { type: Type.STRING },
+                          status: {
+                            type: Type.STRING,
+                            enum: ['overlap', 'uniqueA', 'uniqueB'],
+                          },
+                          explanation: { type: Type.STRING },
+                        },
+                        required: ['topicH2', 'status', 'explanation'],
+                      },
+                    },
+                  },
+                  required: ['comparisonList'],
+                },
               },
               required: [
                 'intentOverlapPct',
@@ -598,6 +882,85 @@ Responda ESTRITAMENTE em formato JSON com a estrutura solicitada, usando as regr
       };
     }
 
+    // Assemble headingsAnalysis
+    let headingsAnalysis = detailedAnalysis.headingsAnalysis;
+    const headingsA: string[] = metaA.h2 || [];
+    const headingsB: string[] = metaB.h2 || [];
+
+    if (!headingsAnalysis || !headingsAnalysis.comparisonList || headingsAnalysis.comparisonList.length === 0) {
+      const comparisonList: Array<{ topicH2: string; status: 'overlap' | 'uniqueA' | 'uniqueB'; explanation: string }> = [];
+
+      if (headingsA.length > 0 || headingsB.length > 0) {
+        const bNormalized = headingsB.map(h => ({ original: h, norm: h.toLowerCase().trim() }));
+        const matchedBIndices = new Set<number>();
+
+        for (const hA of headingsA) {
+          const normA = hA.toLowerCase().trim();
+          const matchIdx = bNormalized.findIndex((b, idx) => !matchedBIndices.has(idx) && (b.norm === normA || b.norm.includes(normA) || normA.includes(b.norm)));
+          if (matchIdx !== -1) {
+            matchedBIndices.add(matchIdx);
+            comparisonList.push({
+              topicH2: hA,
+              status: 'overlap',
+              explanation: `Abordado em ambos os conteúdos (em B: "${bNormalized[matchIdx].original}"). Conflito estrutural de heading.`,
+            });
+          } else {
+            comparisonList.push({
+              topicH2: hA,
+              status: 'uniqueA',
+              explanation: 'Subtópico abordado exclusivamente no Conteúdo A.',
+            });
+          }
+        }
+
+        headingsB.forEach((hB, idx) => {
+          if (!matchedBIndices.has(idx)) {
+            comparisonList.push({
+              topicH2: hB,
+              status: 'uniqueB',
+              explanation: 'Subtópico abordado exclusivamente no Conteúdo B.',
+            });
+          }
+        });
+      }
+
+      if (comparisonList.length === 0 && detailedAnalysis.topicalComparison) {
+        (detailedAnalysis.topicalComparison.sharedEntitiesAndTopics || []).forEach((t: string) => {
+          comparisonList.push({
+            topicH2: t,
+            status: 'overlap',
+            explanation: 'Entidade e subtópico compartilhado em ambos os conteúdos.',
+          });
+        });
+        (detailedAnalysis.topicalComparison.uniqueToA || []).forEach((t: string) => {
+          comparisonList.push({
+            topicH2: t,
+            status: 'uniqueA',
+            explanation: 'Subtópico exclusivo identificado no Conteúdo A.',
+          });
+        });
+        (detailedAnalysis.topicalComparison.uniqueToB || []).forEach((t: string) => {
+          comparisonList.push({
+            topicH2: t,
+            status: 'uniqueB',
+            explanation: 'Subtópico exclusivo identificado no Conteúdo B.',
+          });
+        });
+      }
+
+      headingsAnalysis = {
+        headingsA,
+        headingsB,
+        comparisonList,
+      };
+    } else {
+      headingsAnalysis = {
+        headingsA,
+        headingsB,
+        comparisonList: headingsAnalysis.comparisonList,
+      };
+    }
+
     const payload = {
       vectorSimilarityPct,
       intentOverlapPct: detailedAnalysis.intentOverlapPct || vectorSimilarityPct,
@@ -611,10 +974,19 @@ Responda ESTRITAMENTE em formato JSON com a estrutura solicitada, usando as regr
       conflictPoints: detailedAnalysis.conflictPoints || [],
       recommendedAction: detailedAnalysis.recommendedAction,
       differentiationBlueprint: detailedAnalysis.differentiationBlueprint,
+      headingsAnalysis,
       metadataA: metaA,
       metadataB: metaB,
     };
 
+    // Store in SHA-256 analysisCache
+    if (analysisCache.size >= MAX_CACHE_SIZE) {
+      const oldestKey = analysisCache.keys().next().value;
+      if (oldestKey) analysisCache.delete(oldestKey);
+    }
+    analysisCache.set(cacheKey, { payload, timestamp: Date.now() });
+
+    res.setHeader('X-Cache', 'MISS');
     res.json(payload);
   } catch (error: any) {
     console.error('Error in analyze-cannibalization:', error);

@@ -9,7 +9,16 @@ import {
   signOut,
 } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { auth, googleProvider, db, syncUserProfile, SUPER_ADMIN_EMAIL } from '../lib/firebase';
+import {
+  auth,
+  googleProvider,
+  centralDb,
+  syncUserProfile,
+  subscribeCentralWallet,
+  deductCredits,
+  isSuperAdminEmail,
+  SUPER_ADMIN_EMAIL,
+} from '../lib/firebase';
 import { UserProfile } from '../types';
 
 interface AuthContextType {
@@ -22,6 +31,7 @@ interface AuthContextType {
   paywallReason: string | null;
   openPaywall: (reason?: string) => void;
   closePaywall: () => void;
+  guardAction: (action: () => void, featureName?: string, creditCost?: number) => boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, name: string) => Promise<void>;
@@ -38,7 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [paywallReason, setPaywallReason] = useState<string | null>(null);
 
   const openPaywall = (reason?: string) => {
-    setPaywallReason(reason || 'Para executar cálculos de canibalização e diagnósticos avançados de SEO, é necessário uma conta ativa.');
+    setPaywallReason(reason || 'Para executar cálculos de canibalização e diagnósticos avançados de SEO, é necessário uma conta ativa com saldo de créditos.');
     setIsPaywallOpen(true);
   };
 
@@ -60,22 +70,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (currentUser) {
         try {
-          // Initialize/sync profile
+          // Initialize/sync profile with Central Suite Core
           const initialProfile = await syncUserProfile(currentUser);
           setUserProfile(initialProfile);
 
-          // Listen in real-time to profile changes (approval by admin, plan changes, etc.)
-          const userDocRef = doc(db, 'users', currentUser.uid);
-          unsubscribeFirestore = onSnapshot(userDocRef, (snapshot) => {
-            if (snapshot.exists()) {
-              const updatedData = snapshot.data() as UserProfile;
-              setUserProfile((prev) => {
-                // If previously not active, and now active, close paywall automatically!
-                if (prev && prev.status !== 'active' && updatedData.status === 'active') {
-                  setIsPaywallOpen(false);
-                }
-                return updatedData;
-              });
+          // Listen in real-time to central wallet and profile updates
+          unsubscribeFirestore = subscribeCentralWallet(currentUser.uid, (updatedData) => {
+            setUserProfile(updatedData);
+            if ((updatedData.status === 'active' || updatedData.role === 'admin') && (updatedData.creditsBalance ?? 0) > 0) {
+              setIsPaywallOpen(false);
             }
           });
         } catch (err) {
@@ -157,9 +160,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUserProfile(null);
   };
 
-  const isSuperAdminEmail = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
-  const isAdmin = isSuperAdminEmail || userProfile?.role === 'admin';
+  const isUserSuperAdmin = isSuperAdminEmail(user?.email);
+  const isAdmin = isUserSuperAdmin || userProfile?.role === 'admin';
   const isActive = isAdmin || userProfile?.status === 'active';
+
+  /**
+   * Guards a key feature: verifies active subscriber and credit balance;
+   * otherwise, displays the graceful paywall modal explaining access.
+   */
+  const guardAction = (action: () => void, featureName = 'esta ferramenta', creditCost = 1): boolean => {
+    if (isAdmin) {
+      action();
+      return true;
+    }
+
+    if (!user) {
+      openPaywall(`Para utilizar ${featureName}, é necessário estar conectado à sua conta de assinante da Suíte Semântico.`);
+      return false;
+    }
+
+    if (userProfile?.status !== 'active') {
+      const reason = userProfile?.status === 'pending'
+        ? `Sua solicitação de acesso para ${featureName} está aguardando liberação da equipe.`
+        : `O seu acesso a ${featureName} está temporariamente bloqueado ou expirado. Faça uma recarga ou renove seu plano na Suíte Semântico.`;
+      openPaywall(reason);
+      return false;
+    }
+
+    const currentBalance = userProfile?.creditsBalance ?? 0;
+    if (currentBalance < creditCost) {
+      openPaywall(`A ação "${featureName}" requer ${creditCost} crédito(s), mas seu saldo atual na carteira é de ${currentBalance} crédito(s). Adquira créditos adicionais para continuar.`);
+      return false;
+    }
+
+    // Debita atomicamente da carteira central
+    deductCredits(user.uid, creditCost, featureName, user.email || undefined).catch(console.warn);
+    action();
+    return true;
+  };
 
   return (
     <AuthContext.Provider
@@ -173,6 +211,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         paywallReason,
         openPaywall,
         closePaywall,
+        guardAction,
         loginWithGoogle,
         loginWithEmail,
         registerWithEmail,

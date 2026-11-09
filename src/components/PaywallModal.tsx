@@ -19,12 +19,14 @@ interface PaywallModalProps {
   isOpen: boolean;
   onClose: () => void;
   reason?: string | null;
+  onOpenAuth?: (mode?: 'login' | 'register') => void;
 }
 
 export const PaywallModal: React.FC<PaywallModalProps> = ({
   isOpen,
   onClose,
   reason,
+  onOpenAuth,
 }) => {
   const {
     user,
@@ -97,9 +99,11 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
 
   // WhatsApp link formatted with user email
   const userIdentifier = user?.email || 'novo_usuario';
-  const whatsappUrl = `https://api.whatsapp.com/send?phone=5511999999999&text=${encodeURIComponent(
-    `Olá! Gostaria de solicitar a liberação de acesso imediato à Calculadora de Canibalização Semântico SEO para o e-mail: ${userIdentifier}`
+  const whatsappUrl = `https://wa.me/5551989011709?text=${encodeURIComponent(
+    `Olá Alex! Sou usuário da Calculadora de Canibalização Semântica (${userIdentifier}) e gostaria de assinar/recarregar créditos via PIX.`
   )}`;
+  const cobradorUrl = 'https://semantico-cobrador-316925929262.us-central1.run.app';
+  const isOutOfCredits = user && (userProfile?.creditsBalance ?? 0) <= 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -122,21 +126,32 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
             <div>
               <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 uppercase tracking-wider">
                 <Sparkles className="w-3 h-3" />
-                <span>Semântico SEO • Acesso Premium</span>
+                <span>Semântico SEO • Suíte Unificada</span>
               </div>
               <h2 className="text-lg font-black text-slate-950 tracking-tight">
-                Liberação da Ferramenta de Canibalização
+                {!user
+                  ? 'Conecte-se e Ganhe 10 Créditos Grátis'
+                  : isOutOfCredits
+                  ? 'Recarregue ou Assine a Suíte'
+                  : 'Carteira da Suíte Semântico'}
               </h2>
             </div>
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">
             {reason ||
-              'Acesse a calculadora completa com análise vetorial de cosseno de alta densidade e diagnóstico cognitivo de intenção de busca.'}
+              'Acesse o cálculo completo com embeddings vetoriais Gemini, auditoria de canibalização e plano de ação semântico.'}
           </p>
+
+          {user && (
+            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-800">
+              <span>Saldo Atual:</span>
+              <span className="font-extrabold text-amber-700">{userProfile?.creditsBalance ?? 0} créditos</span>
+            </div>
+          )}
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-5 text-xs">
+        <div className="p-6 overflow-y-auto space-y-4 text-xs">
           {/* Case 1: Logged in, but status is 'pending' */}
           {user && userProfile?.status === 'pending' && (
             <div className="space-y-4">
@@ -146,7 +161,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                   <span>Acesso sob Análise (Aguardando Aprovação)</span>
                 </div>
                 <p className="text-xs text-amber-800 leading-relaxed mb-2">
-                  Sua conta com o e-mail <strong className="font-semibold">{user.email}</strong> foi registrada com sucesso! Para garantir a qualidade e segurança da infraestrutura de IA, novos acessos passam por aprovação da nossa equipe.
+                  Sua conta com o e-mail <strong className="font-semibold">{user.email}</strong> foi registrada com sucesso! Para garantir a qualidade da infraestrutura de IA, novos acessos passam por liberação da nossa equipe.
                 </p>
                 <div className="flex items-center gap-2 text-[11px] font-medium bg-amber-100/70 p-2 rounded-lg text-amber-900 border border-amber-200/60">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
@@ -155,9 +170,6 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
               </div>
 
               <div className="space-y-2">
-                <span className="text-[11px] font-semibold text-slate-600 block">
-                  Deseja liberar agora mesmo?
-                </span>
                 <a
                   href={whatsappUrl}
                   target="_blank"
@@ -168,17 +180,6 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                   <span>Solicitar Liberação Imediata via WhatsApp</span>
                   <ExternalLink className="w-3.5 h-3.5 opacity-80" />
                 </a>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-slate-500 text-[11px]">
-                <span>Conectado como: {user.email}</span>
-                <button
-                  type="button"
-                  onClick={() => logout()}
-                  className="text-slate-700 hover:text-slate-950 font-medium underline"
-                >
-                  Trocar de conta
-                </button>
               </div>
             </div>
           )}
@@ -192,7 +193,7 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                   <span>Acesso Suspenso ou Bloqueado</span>
                 </div>
                 <p className="text-xs text-rose-800 leading-relaxed">
-                  O acesso para o e-mail <strong>{user.email}</strong> foi suspenso ou sua assinatura expirou. Entre em contato com a equipe da Semântico para reativar seu plano.
+                  O acesso para o e-mail <strong>{user.email}</strong> expirou ou requer renovação de plano.
                 </p>
               </div>
 
@@ -205,12 +206,73 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
                 <MessageCircle className="w-4 h-4" />
                 <span>Falar com Suporte no WhatsApp</span>
               </a>
+            </div>
+          )}
 
-              <div className="pt-3 border-t border-slate-100 flex justify-end">
+          {/* Case 3: Logged in and active (or out of credits) - Show unified plans */}
+          {user && (
+            <div className="space-y-3">
+              <div className="p-3 rounded-xl border-2 border-amber-400 bg-amber-50/60 relative">
+                <span className="absolute -top-2.5 right-3 bg-amber-500 text-slate-950 font-black text-[9px] uppercase tracking-wider px-2 py-0.5 rounded-full shadow-2xs">
+                  Mais Popular
+                </span>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-xs text-slate-900">Plano Especialista</h4>
+                  <span className="text-xs font-black text-slate-950">R$ 247/mês</span>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  <strong>150 créditos unificados</strong> mensais válidos em todas as 6 ferramentas.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-0.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-xs text-slate-900">Recarga Avulsa (100 Créditos)</h4>
+                  <span className="text-xs font-black text-slate-950">R$ 97 avulso</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Créditos adicionais imediatos sem data de expiração.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-0.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-xs text-slate-900">Plano Agência</h4>
+                  <span className="text-xs font-black text-slate-950">R$ 697/mês</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  <strong>600 créditos unificados</strong> para equipes e alto volume de auditoria.
+                </p>
+              </div>
+
+              <div className="pt-2 space-y-2">
+                <a
+                  href={cobradorUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-950 font-extrabold text-xs shadow-xs transition active:scale-[0.99]"
+                >
+                  <span>Pagar via PIX no Cobrador Semântico</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+
+                <a
+                  href={whatsappUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  <span>Falar no WhatsApp para Liberação Imediata</span>
+                </a>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-slate-500 text-[11px]">
+                <span>Conectado como: {user.email}</span>
                 <button
                   type="button"
                   onClick={() => logout()}
-                  className="text-slate-700 hover:text-slate-950 font-medium text-[11px] underline"
+                  className="text-slate-700 hover:text-slate-950 font-medium underline"
                 >
                   Sair da conta
                 </button>
@@ -221,6 +283,54 @@ export const PaywallModal: React.FC<PaywallModalProps> = ({
           {/* Case 3: Logged out - Provide fast login / signup options */}
           {!user && (
             <div className="space-y-4">
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2 text-xs">
+                <div className="flex items-center gap-2 font-bold text-slate-900">
+                  <Sparkles className="w-4 h-4 text-amber-500" />
+                  <span>Cadastre-se e ganhe 10 créditos grátis de degustação!</span>
+                </div>
+                <ul className="space-y-1.5 text-slate-600 pl-1">
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    <span>Cálculo semântico de canibalização com embeddings Gemini</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    <span>Diagnóstico de intenção e SERP em tempo real</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    <span>Plano de ação e simulador de risco 301</span>
+                  </li>
+                </ul>
+              </div>
+
+              {onOpenAuth ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenAuth('login');
+                    }}
+                    className="w-full py-2.5 px-4 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>Fazer Login</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenAuth('register');
+                    }}
+                    className="w-full py-2.5 px-4 bg-[#f5be38] hover:bg-[#eab308] text-slate-950 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Criar Conta Grátis</span>
+                  </button>
+                </div>
+              ) : null}
               {/* 1-Click Google Sign-In */}
               <button
                 type="button"

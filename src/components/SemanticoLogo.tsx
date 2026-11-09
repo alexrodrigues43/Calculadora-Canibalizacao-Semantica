@@ -1,69 +1,120 @@
-import React from 'react';
+import React from "react";
 
 interface SemanticoLogoProps {
+  variant?: "dark" | "light"; // dark = black text, light = white text
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  showSubtitle?: boolean;
+  size?: "sm" | "md" | "lg";
 }
 
-export const SemanticoLogo: React.FC<SemanticoLogoProps> = ({ className = '', size = 'md' }) => {
-  const iconSizes = {
-    sm: 'w-7 h-7',
-    md: 'w-9 h-9',
-    lg: 'w-11 h-11',
-  };
-
-  const textSizes = {
-    sm: 'text-base',
-    md: 'text-xl',
-    lg: 'text-2xl',
-  };
-
-  const badgeSizes = {
-    sm: 'text-[7.5px] px-1.5 py-0.5',
-    md: 'text-[8.5px] px-2 py-0.5',
-    lg: 'text-[10px] px-2.5 py-0.5',
-  };
+/**
+ * Exact vector recreation of the Semântico knowledge graph mark:
+ * - 1 central hub node
+ * - 5 spokes radiating outwards at precise angles:
+ *   1. Top-Left: Large accent node in brand yellow (#fdd910)
+ *   2. Top-Right: Medium white node
+ *   3. Bottom-Left: Small white node
+ *   4. Bottom-Center: Medium-large white node
+ *   5. Bottom-Right: Large white node
+ * - Bold black connection lines (stroke-width 8px) with rounded caps
+ */
+export const SemanticoSymbol: React.FC<{
+  size?: number;
+  className?: string;
+  isLight?: boolean;
+}> = ({ size = 36, className = "", isLight = false }) => {
+  const strokeColor = isLight ? "#ffffff" : "#000000";
+  const nodeFill = isLight ? "#1e1b24" : "#ffffff";
+  const yellowFill = "#fdd910";
 
   return (
-    <div className={`flex items-center gap-2.5 select-none ${className}`}>
-      {/* Network Node Logo with the golden-yellow top-left node */}
-      <div className={`${iconSizes[size]} shrink-0 relative flex items-center justify-center`}>
-        <svg viewBox="0 0 512 512" fill="none" className="w-full h-full drop-shadow-2xs">
-          {/* Connector Spokes */}
-          <line x1="240" y1="240" x2="80" y2="80" stroke="#0f172a" strokeWidth="26" strokeLinecap="round" />
-          <line x1="240" y1="240" x2="375" y2="95" stroke="#0f172a" strokeWidth="26" strokeLinecap="round" />
-          <line x1="240" y1="240" x2="110" y2="365" stroke="#0f172a" strokeWidth="26" strokeLinecap="round" />
-          <line x1="240" y1="240" x2="240" y2="435" stroke="#0f172a" strokeWidth="26" strokeLinecap="round" />
-          <line x1="240" y1="240" x2="435" y2="415" stroke="#0f172a" strokeWidth="26" strokeLinecap="round" />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={`shrink-0 ${className}`}
+      aria-label="Semântico Logo Symbol"
+    >
+      {/* 5 Spoke Lines radiating from center (cx: 50, cy: 50) */}
+      {/* 1. Top-Left Spoke */}
+      <line x1="50" y1="50" x2="16" y2="16" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" />
+      
+      {/* 2. Top-Right Spoke */}
+      <line x1="50" y1="50" x2="80" y2="20" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" />
+      
+      {/* 3. Bottom-Left Spoke */}
+      <line x1="50" y1="50" x2="22" y2="76" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" />
+      
+      {/* 4. Bottom-Center Spoke */}
+      <line x1="50" y1="50" x2="50" y2="88" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" />
+      
+      {/* 5. Bottom-Right Spoke */}
+      <line x1="50" y1="50" x2="88" y2="86" stroke={strokeColor} strokeWidth="8" strokeLinecap="round" />
 
-          {/* Center White Node */}
-          <circle cx="240" cy="240" r="62" fill="#ffffff" stroke="#0f172a" strokeWidth="26" />
+      {/* Center Hub Node */}
+      <circle cx="50" cy="50" r="14" fill={nodeFill} stroke={strokeColor} strokeWidth="8" />
 
-          {/* Top-Left Gold/Yellow Node */}
-          <circle cx="80" cy="80" r="44" fill="#FFA800" stroke="#0f172a" strokeWidth="26" />
+      {/* 1. Top-Left Signature Yellow Node */}
+      <circle cx="16" cy="16" r="11.5" fill={yellowFill} stroke={strokeColor} strokeWidth="8" />
 
-          {/* Peripheral White Nodes */}
-          <circle cx="375" cy="95" r="28" fill="#ffffff" stroke="#0f172a" strokeWidth="22" />
-          <circle cx="110" cy="365" r="30" fill="#ffffff" stroke="#0f172a" strokeWidth="22" />
-          <circle cx="240" cy="435" r="46" fill="#ffffff" stroke="#0f172a" strokeWidth="26" />
-          <circle cx="435" cy="415" r="46" fill="#ffffff" stroke="#0f172a" strokeWidth="26" />
-        </svg>
-      </div>
+      {/* 2. Top-Right Secondary Node */}
+      <circle cx="80" cy="20" r="7.5" fill={nodeFill} stroke={strokeColor} strokeWidth="7" />
 
-      <div className="flex flex-col justify-center leading-none">
-        <div className="flex items-center">
-          <span className={`font-black tracking-tight text-slate-950 ${textSizes[size]}`}>
-            Semântico
-          </span>
-        </div>
-        <div className="flex items-center mt-1">
-          <span
-            style={{ backgroundColor: '#FED049' }}
-            className={`font-black text-slate-950 rounded-full uppercase tracking-wider inline-block leading-none ${badgeSizes[size]}`}
-          >
-            SIGNIFICADO E SENTIDO
-          </span>
-        </div>
+      {/* 3. Bottom-Left Small Node */}
+      <circle cx="22" cy="76" r="8" fill={nodeFill} stroke={strokeColor} strokeWidth="7" />
+
+      {/* 4. Bottom-Center Node */}
+      <circle cx="50" cy="88" r="10.5" fill={nodeFill} stroke={strokeColor} strokeWidth="8" />
+
+      {/* 5. Bottom-Right Large Node */}
+      <circle cx="88" cy="86" r="11" fill={nodeFill} stroke={strokeColor} strokeWidth="8" />
+    </svg>
+  );
+};
+
+export const SemanticoLogo: React.FC<SemanticoLogoProps> = ({
+  variant = "dark",
+  className = "",
+  showSubtitle = true,
+  size = "md",
+}) => {
+  const isLight = variant === "light";
+  const textColor = isLight ? "#ffffff" : "#000000";
+
+  const sizeConfigs = {
+    sm: { symbolSize: 28, textClass: "text-lg", tagClass: "text-[8px] py-0.5 px-1.5" },
+    md: { symbolSize: 36, textClass: "text-xl", tagClass: "text-[9px] py-0.5 px-2" },
+    lg: { symbolSize: 46, textClass: "text-2xl", tagClass: "text-[10px] py-1 px-2.5" },
+  };
+
+  const current = sizeConfigs[size];
+
+  return (
+    <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
+      {/* Brand Vector Symbol */}
+      <SemanticoSymbol size={current.symbolSize} isLight={isLight} />
+
+      {/* Wordmark + Tag */}
+      <div className="flex flex-col justify-center">
+        <span
+          style={{ color: textColor }}
+          className={`font-black tracking-tight leading-none ${current.textClass}`}
+        >
+          Semântico
+        </span>
+
+        {showSubtitle && (
+          <div className="mt-1 flex">
+            <span
+              className={`bg-[#fdd910] text-[#000000] font-black uppercase tracking-widest rounded-xs leading-tight ${current.tagClass} shadow-2xs`}
+              style={{ letterSpacing: "0.14em" }}
+            >
+              Significado e Sentido
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

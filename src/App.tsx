@@ -12,12 +12,18 @@ import { ScoreBanner } from './components/ScoreBanner';
 import { IntentComparison } from './components/IntentComparison';
 import { ConflictQueries } from './components/ConflictQueries';
 import { ActionPlan } from './components/ActionPlan';
-import { GuideModal } from './components/GuideModal';
+import { HeadingsComparison } from './components/HeadingsComparison';
+import { BriefingModal } from './components/BriefingModal';
+import { DecisionSimulatorModal } from './components/DecisionSimulatorModal';
+import { ReportPdfModal } from './components/ReportPdfModal';
+import { GscImporterModal } from './components/GscImporterModal';
+import { GuideModal, GuideTab } from './components/GuideModal';
 import { PaywallModal } from './components/PaywallModal';
+import { AuthModal } from './components/AuthModal';
 import { AdminPanel } from './components/AdminPanel';
 import { PRESET_SCENARIOS } from './data/presets';
 import { CannibalizationAnalysisResult, PresetScenario } from './types';
-import { recordSuccessfulUsage } from './lib/firebase';
+import { recordSuccessfulUsage, deductCredits } from './lib/firebase';
 import {
   Sparkles,
   AlertCircle,
@@ -26,6 +32,11 @@ import {
   Swords,
   CheckCircle2,
   Lock,
+  ListTree,
+  FileText,
+  Sliders,
+  Printer,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 function MainApp() {
@@ -40,10 +51,17 @@ function MainApp() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CannibalizationAnalysisResult | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'intent' | 'conflicts' | 'action'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'intent' | 'conflicts' | 'headings' | 'action'>('overview');
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isGuideOpen, setIsGuideOpen] = useState<boolean>(false);
+  const [guideTab, setGuideTab] = useState<GuideTab>('howItWorks');
+  const [isBriefingOpen, setIsBriefingOpen] = useState<boolean>(false);
+  const [isSimulatorOpen, setIsSimulatorOpen] = useState<boolean>(false);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
+  const [isGscModalOpen, setIsGscModalOpen] = useState<boolean>(false);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [historyCount, setHistoryCount] = useState<number>(0);
 
   const handleSelectPreset = (preset: PresetScenario) => {
@@ -71,10 +89,30 @@ function MainApp() {
     setError(null);
   };
 
+  const handleSelectGscConflict = (urlA: string, urlB: string, query: string) => {
+    setActivePresetId(null);
+    setContentA(urlA);
+    setContentB(urlB);
+    setTargetKeyword(query);
+    setError(null);
+  };
+
   const handleAnalyze = async () => {
     // Paywall Gate check
+    if (!user) {
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     if (!isActive) {
       openPaywall('Para executar o cálculo semântico com embeddings vetoriais Gemini e diagnóstico cognitivo de SERP, é necessário possuir uma conta ativa na Semântico.');
+      return;
+    }
+
+    const currentBalance = userProfile?.creditsBalance ?? 0;
+    if (!isAdmin && currentBalance < 1) {
+      openPaywall(`A análise de canibalização requer 1 crédito, mas seu saldo atual na carteira central é de ${currentBalance} crédito(s). Adquira créditos adicionais para continuar.`);
       return;
     }
 
@@ -106,9 +144,12 @@ function MainApp() {
       setResult(data);
       setHistoryCount((prev) => prev + 1);
 
-      // Increment usage count atomically in Firestore for the active user
+      // Increment usage count and deduct credits atomically from Central Suite Core
       if (user) {
         await recordSuccessfulUsage(user.uid);
+        if (!isAdmin) {
+          await deductCredits(user.uid, 1, 'Cálculo de Canibalização', user.email || undefined);
+        }
       }
     } catch (err: any) {
       console.error('Analysis error:', err);
@@ -175,10 +216,18 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
     <div className="min-h-screen bg-semantico-grid text-slate-800 flex flex-col font-sans selection:bg-amber-100 selection:text-amber-900">
       {/* Semântico App Header */}
       <Header
-        onOpenGuide={() => setIsGuideOpen(true)}
+        onOpenGuide={(tab) => {
+          setGuideTab(tab || 'howItWorks');
+          setIsGuideOpen(true);
+        }}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onNewAnalysis={handleClear}
+        onOpenGsc={() => setIsGscModalOpen(true)}
         historyCount={historyCount}
+        onOpenAuth={(mode = 'login') => {
+          setAuthModalMode(mode);
+          setIsAuthModalOpen(true);
+        }}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -186,6 +235,7 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
         <PresetBar
           onSelectPreset={handleSelectPreset}
           activePresetId={activePresetId}
+          onOpenGsc={() => setIsGscModalOpen(true)}
         />
 
         {/* Input Panel */}
@@ -263,6 +313,19 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
 
                 <button
                   type="button"
+                  onClick={() => setActiveTab('headings')}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                    activeTab === 'headings'
+                      ? 'bg-amber-400 text-slate-950 font-bold shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <ListTree className="w-3.5 h-3.5" />
+                  <span>Estrutura & H2</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setActiveTab('action')}
                   className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
                     activeTab === 'action'
@@ -273,6 +336,37 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>Plano de Ação Estratégico</span>
                 </button>
+
+                <div className="ml-auto flex items-center gap-2 pl-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setIsSimulatorOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition shrink-0"
+                    title="Auditar risco de tráfego antes de aplicar 301"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Simulador 301</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsBriefingOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-400 text-slate-950 hover:bg-amber-300 shadow-2xs transition shrink-0"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Briefing Redator</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsPdfModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition shrink-0"
+                    title="Imprimir ou exportar laudo executivo diagramado em PDF"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Relatório PDF</span>
+                  </button>
+                </div>
               </div>
 
               {/* Tab Contents */}
@@ -286,10 +380,10 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
 
                   <div className="pt-4 border-t border-slate-100 flex justify-end">
                     <button
-                      onClick={() => setActiveTab('action')}
+                      onClick={() => setActiveTab('headings')}
                       className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 px-3.5 py-2 rounded-xl border border-amber-200/80 transition-colors"
                     >
-                      <span>Ver Diretriz de Resolução Técnica Recomendada</span>
+                      <span>Ver Análise de Headings H2</span>
                       <span>→</span>
                     </button>
                   </div>
@@ -304,6 +398,14 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
                 />
               )}
 
+              {activeTab === 'headings' && (
+                <HeadingsComparison
+                  headingsAnalysis={result.headingsAnalysis}
+                  metadataA={result.metadataA}
+                  metadataB={result.metadataB}
+                />
+              )}
+
               {activeTab === 'action' && (
                 <ActionPlan
                   recommendedAction={result.recommendedAction}
@@ -311,6 +413,9 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
                   overallScore={result.overallScorePct}
                   onCopyFullReport={handleCopyReport}
                   isCopied={isCopied}
+                  onOpenBriefing={() => setIsBriefingOpen(true)}
+                  onOpenSimulator={() => setIsSimulatorOpen(true)}
+                  onOpenPdfReport={() => setIsPdfModalOpen(true)}
                 />
               )}
             </div>
@@ -335,13 +440,66 @@ ${result.recommendedAction.stepByStep.map((s, i) => `${i + 1}. ${s}`).join('\n')
       </footer>
 
       {/* Guide / How it Works Modal */}
-      <GuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
+      <GuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+        initialTab={guideTab}
+      />
+
+      {/* Copywriter Briefing Modal */}
+      {result && (
+        <BriefingModal
+          isOpen={isBriefingOpen}
+          onClose={() => setIsBriefingOpen(false)}
+          result={result}
+        />
+      )}
+
+      {/* Decision Risk 301 Simulator Modal */}
+      {result && (
+        <DecisionSimulatorModal
+          isOpen={isSimulatorOpen}
+          onClose={() => setIsSimulatorOpen(false)}
+          result={result}
+        />
+      )}
+
+      {/* Executive Diagrammed PDF Report Modal */}
+      {result && (
+        <ReportPdfModal
+          isOpen={isPdfModalOpen}
+          onClose={() => setIsPdfModalOpen(false)}
+          result={result}
+        />
+      )}
+
+      {/* Google Search Console CSV Importer Modal */}
+      <GscImporterModal
+        isOpen={isGscModalOpen}
+        onClose={() => setIsGscModalOpen(false)}
+        onSelectConflict={handleSelectGscConflict}
+      />
 
       {/* Real-time Paywall / Auth Modal */}
       <PaywallModal
         isOpen={isPaywallOpen}
         onClose={closePaywall}
         reason={paywallReason}
+        onOpenAuth={(mode) => {
+          closePaywall();
+          setAuthModalMode(mode || 'login');
+          setIsAuthModalOpen(true);
+        }}
+      />
+
+      {/* Auth Modal (Exact replica of Glossário de Entidades) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        initialMode={authModalMode}
+        onSuccess={() => {
+          setIsAuthModalOpen(false);
+        }}
       />
 
       {/* Admin Panel (Visible strictly for role: 'admin') */}

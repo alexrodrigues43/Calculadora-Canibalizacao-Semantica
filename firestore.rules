@@ -2,35 +2,121 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSuperAdmin() {
-      return request.auth != null && (
-        request.auth.token.email == 'alexrodrigues43@gmail.com' ||
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-      );
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (matches Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required, 1-128 chars, immutable) - Auth user ID
+    //   - email: string (required, <= 254 chars, immutable by non-admin) - User email address
+    //   - displayName: string (required, 1-150 chars, user-updatable) - User name
+    //   - role: string (required, 'admin' | 'client', immutable by non-admin) - User role
+    //   - status: string (required, 'pending' | 'active' | 'blocked' | 'expired', immutable by non-admin) - Account status
+    //   - plan: string (required, 'trial' | 'monthly' | 'annual' | 'lifetime', immutable by non-admin) - Subscription plan
+    //   - usageCount: int (required, >= 0, can only increment +1 by non-admin) - Tool usage counter
+    //   - notes: string (optional, <= 1000 chars, immutable by non-admin) - Internal admin notes
+    //   - createdAt: string (required, ISO 8601 string, <= 50 chars, immutable) - Creation timestamp
+    //   - lastLoginAt: string (required, ISO 8601 string, <= 50 chars, user-updatable) - Last login timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
     }
 
     function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
+      return isAuthenticated() && request.auth.uid == userId;
     }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        ('email' in request.auth.token && request.auth.token.email == 'alexrodrigues43@gmail.com') ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin')
+      );
+    }
+
+    // Strict schema & type validator (Validator Function Pattern)
+    function isValidUserData(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'status', 'plan', 'usageCount', 'createdAt', 'lastLoginAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'status', 'plan', 'usageCount', 'notes', 'createdAt', 'lastLoginAt']) &&
+        data.uid is string && data.uid.size() > 0 && data.uid.size() <= 128 &&
+        data.email is string && data.email.size() <= 254 &&
+        data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 150 &&
+        data.role in ['admin', 'client'] &&
+        data.status in ['pending', 'active', 'blocked', 'expired'] &&
+        data.plan in ['trial', 'monthly', 'annual', 'lifetime'] &&
+        data.usageCount is int && data.usageCount >= 0 &&
+        (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+        data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 50 &&
+        data.lastLoginAt is string && data.lastLoginAt.size() > 0 && data.lastLoginAt.size() <= 50;
+    }
+
+    // Creation validator for non-admin users
+    function isValidUserCreate(userId) {
+      let data = request.resource.data;
+      return isOwner(userId) &&
+        isValidUserData(data) &&
+        data.uid == userId &&
+        data.uid == request.auth.uid &&
+        data.role == 'client' &&
+        data.status == 'pending' &&
+        data.plan == 'trial' &&
+        data.usageCount == 0;
+    }
+
+    // Update validator for non-admin users
+    function isValidUserUpdate(userId) {
+      let data = request.resource.data;
+      let oldData = resource.data;
+      let affected = data.diff(oldData).affectedKeys();
+
+      return isOwner(userId) &&
+        isValidUserData(data) &&
+        // Only harmless fields may be changed by non-admin
+        affected.hasOnly(['lastLoginAt', 'displayName', 'usageCount']) &&
+        // Explicit immutable fields verification (defense-in-depth)
+        data.uid == oldData.uid &&
+        data.email == oldData.email &&
+        data.role == oldData.role &&
+        data.status == oldData.status &&
+        data.plan == oldData.plan &&
+        data.createdAt == oldData.createdAt &&
+        data.get('notes', '') == oldData.get('notes', '') &&
+        // Usage counter protection: cannot decrement, can only increment by at most 1
+        data.usageCount >= oldData.usageCount &&
+        data.usageCount <= oldData.usageCount + 1;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
 
     match /users/{userId} {
-      // Super admin or admin can read, write, update, delete everything
-      allow read, write: if isSuperAdmin();
+      // Super admin can read all users (e.g. for AdminPanel), user can read own profile
+      allow read: if isOwner(userId) || isSuperAdmin();
 
-      // User can read their own profile
-      allow read: if isOwner(userId);
+      // Super admin can create profiles freely; common users are strictly bound to initial client/trial state
+      allow create: if (isSuperAdmin() && isValidUserData(request.resource.data)) ||
+                       isValidUserCreate(userId);
 
-      // User can create their own profile during signup
-      allow create: if isOwner(userId);
+      // Super admin can update everything; common users can only update harmless fields and increment usageCount
+      allow update: if (isSuperAdmin() && isValidUserData(request.resource.data)) ||
+                       isValidUserUpdate(userId);
 
-      // User can update basic allowed fields (like lastLoginAt, usageCount)
-      allow update: if isOwner(userId);
+      // Only SuperAdmin can delete user records
+      allow delete: if isSuperAdmin();
     }
 
-    // Default fallback
+    // Default fallback - strict default deny for general users, SuperAdmin maintenance access
     match /{document=**} {
       allow read, write: if isSuperAdmin();
-      allow read: if request.auth != null;
     }
   }
 }

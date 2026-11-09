@@ -78,16 +78,49 @@ export interface CannibalizationAnalysisResult {
     h2SuggestionsB: string[];
   };
 
+  headingsAnalysis?: {
+    headingsA: string[];
+    headingsB: string[];
+    comparisonList: {
+      topicH2: string;
+      status: 'overlap' | 'uniqueA' | 'uniqueB';
+      explanation: string;
+    }[];
+  };
+
   metadataA?: {
     title?: string;
     wordCount?: number;
     url?: string;
+    h1?: string[];
+    h2?: string[];
   };
   metadataB?: {
     title?: string;
     wordCount?: number;
     url?: string;
+    h1?: string[];
+    h2?: string[];
   };
+}
+
+export interface CopywriterBriefing {
+  masterTitle: string;
+  secondaryTitle: string;
+  strategy: string;
+  actionSummary: string;
+  coreObjective: string;
+  actionChecklist: string[];
+  sectionsToMoveOrMerge: string[];
+  secondaryAngle: string;
+  recommendedH2sSecondary: string[];
+  internalLinkDirective?: {
+    source: string;
+    target: string;
+    anchorText: string;
+    context: string;
+  };
+  warningsAndTips: string[];
 }
 
 export interface PresetScenario {
@@ -108,17 +141,56 @@ export interface PresetScenario {
 
 export type UserRole = 'admin' | 'client';
 export type UserStatus = 'pending' | 'active' | 'blocked' | 'expired';
-export type UserPlan = 'trial' | 'monthly' | 'annual' | 'lifetime';
+export type SubscriptionPlan = 'trial' | 'specialist' | 'agency' | 'enterprise' | 'monthly' | 'annual' | 'lifetime';
+export type UserPlan = SubscriptionPlan;
 
 export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
+  photoURL?: string;
   role: UserRole;
   status: UserStatus;
-  plan: UserPlan;
+  plan: SubscriptionPlan;
+  creditsBalance?: number;
+  creditsUsed?: number;
+  planExpiresAt?: string;
+  lastAppUsed?: string;
   usageCount: number;
   notes: string;
   createdAt: string;
   lastLoginAt: string;
 }
+
+export type TrafficLevel = 'A_DOMINANT' | 'B_DOMINANT' | 'BOTH_ACTIVE' | 'NEITHER_SIGNIFICANT';
+export type BacklinkProfile = 'A_STRONGER' | 'B_STRONGER' | 'BOTH_IMPORTANT' | 'NEITHER_RELEVANT';
+export type IntentOverlapType = 'IDENTICAL_DUPLICATE' | 'PILLAR_VS_SUBTOPIC' | 'DIFFERENT_ANGLES';
+export type BusinessValue = 'A_HIGH_CONVERT' | 'B_HIGH_CONVERT' | 'EDITORIAL_ONLY';
+
+export interface DecisionSimulationResult {
+  decision: '301_REDIRECT_B_TO_A' | '301_REDIRECT_A_TO_B' | 'CANONICAL_TAG' | 'ANGLE_DIFFERENTIATION' | 'MERGE_INTO_NEW_URL';
+  decisionTitle: string;
+  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  riskScore: number;
+  executiveRationale: string;
+  trafficImpactAnalysis: string;
+  actionRoadmap: string[];
+  preservationChecklist: string[];
+  monitoringGuidance: string[];
+  rollbackPlan: string;
+}
+
+export interface GscConflictRow {
+  query: string;
+  urlA: string;
+  clicksA: number;
+  impressionsA: number;
+  positionA: number;
+  urlB: string;
+  clicksB: number;
+  impressionsB: number;
+  positionB: number;
+  totalImpressions: number;
+  severity: 'CRITICAL' | 'HIGH' | 'MODERATE';
+}
+
